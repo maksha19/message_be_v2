@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: broadcast-messenger-sam-template
+
+Globals:
+  Function:
+    Timeout: 20
+    MemorySize: 512
+    Runtime: python3.9
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        USER_TABLE: !Sub "bm-users-${Stage}"
+        ENGINE_INSTANCE_TABLE: !Sub "bm-engine-instances-${Stage}"
+        USER_LOGIN_TABLE: !Sub "bm-user-logins-${Stage}"
+        USER_SUBSCRIPTION_TABLE: !Sub "bm-user-subscriptions-${Stage}"
+        EVENT_TABLE: !Sub "bm-events-${Stage}"
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+
+Resources:
+
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "bm-users-${Stage}"
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  EngineInstanceTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "bm-engine-instances-${Stage}"
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: instanceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: instanceId
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  UserLoginTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "bm-user-logins-${Stage}"
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: loginInTime
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: loginInTime
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  UserSubscriptionTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "bm-user-subscriptions-${Stage}"
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  EventTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    Properties:
+      TableName: !Sub "bm-events-${Stage}"
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: eventId
+          AttributeType: S
+        - AttributeName: instanceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: eventId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: user-instance-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: instanceId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+  
+  # Function to handle messages
+  MessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/message/
+      Handler: message.lambda_handler
+      FunctionName: !Sub "message-${Stage}"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ec2:RunInstances
+                - ec2:TerminateInstances
+                - ec2:DescribeInstances
+                - ec2:DescribeInstanceStatus
+                - ec2:DescribeImages
+                - ec2:DescribeKeyPairs
+                - ec2:DescribeSecurityGroups
+                - ec2:DescribeSubnets
+                - ec2:DescribeVpcs
+                - ssm:SendCommand
+                - ssm:DescribeInstanceInformation
+                - iam:PassRole
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+              Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}/*"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}/*"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-events-${Stage}"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-events-${Stage}/*"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-engine-instances-${Stage}"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-engine-instances-${Stage}/*"
+    FunctionUrlConfig:
+      AuthType: NONE
+
+  LoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/login/
+      Handler: login.lambda_handler
+      FunctionName: !Sub "login-${Stage}"
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource:
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}/*"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}/*"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-logins-${Stage}"
+              - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-logins-${Stage}/*"
+      FunctionUrlConfig:
+        AuthType: NONE
+  
+  DashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/dashboard/
+      Handler: dashboard.lambda_handler
+      FunctionName: !Sub "dashboard-${Stage}"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource:
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-users-${Stage}/*"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-user-subscriptions-${Stage}/*"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-engine-instances-${Stage}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-engine-instances-${Stage}/*"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-events-${Stage}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/bm-events-${Stage}/*"
+      FunctionUrlConfig:
+        AuthType: NONE
