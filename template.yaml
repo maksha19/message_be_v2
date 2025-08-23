@@ -15,6 +15,7 @@ Globals:
         USER_LOGIN_TABLE: !Sub "bm-user-logins-${Stage}"
         USER_SUBSCRIPTION_TABLE: !Sub "bm-user-subscriptions-${Stage}"
         EVENT_TABLE: !Sub "bm-events-${Stage}"
+        SENDER_INFO_BUCKET : !Sub "bm-sender-info-${Stage}"
 
 Parameters:
   Stage:
@@ -135,6 +136,11 @@ Resources:
                 - ssm:DescribeInstanceInformation
                 - iam:PassRole
               Resource: "*"
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: "arn:aws:s3:::bm-sender-info-${Stage}/*"
             - Effect: Allow
               Action:
                   - dynamodb:GetItem

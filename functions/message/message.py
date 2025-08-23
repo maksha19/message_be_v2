@@ -5,6 +5,7 @@ import requests
 import os
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from ec2Client import create_aws_ec2_instance, call_describe_instances, terminate_aws_ec2_instance
 
 dynamodb = boto3.client('dynamodb')
@@ -123,7 +124,7 @@ def status_instance(user_id, instance_id):
             ],
             'InstanceIds': [instance_id]
         }
-        data = call_describe_instances(**params)
+        data = call_describe_instances(params)
         instance = data['Reservations'][0]['Instances'][0]
         public_url = instance.get('PublicIpAddress')
         if not public_url:
@@ -166,6 +167,74 @@ def log_out_and_terminate_instances(public_url, user_id, instance_id, event_tabl
     except Exception as err:
         print(f"Error logging out and terminating instances: {err}")
         raise ValueError('Failed to log out and terminate instances')
+
+def create_event(user_id, instance_id, event_table, **request_params):
+    try:
+        if not user_id or not instance_id:
+            raise ValueError('User ID and Instance ID cannot be empty')
+
+        now_sgt = datetime.now(ZoneInfo("Asia/Singapore"))
+        eventId = f"{user_id}_{instance_id}_{now_sgt}"
+        title = request_params.get('title', 'No Title')
+        description = request_params.get('description', 'No Description')
+        editorValue = request_params.get('editorValue', '')
+        senderInfo = request_params.get('senderInfo', {})
+        if senderInfo:
+            s3 = boto3.client('s3')
+            bucket_name = os.environ.get('SENDER_INFO_BUCKET')
+            if not bucket_name:
+             raise ValueError('SENDER_INFO_BUCKET environment variable is not set')
+
+            s3_key = f"{eventId}.json"
+            s3.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=json.dumps(senderInfo),
+            ContentType='application/json'
+            )
+            print(f"Sender info saved to S3 at {s3_key}")
+        db_params = {
+            'TableName': event_table,
+            'Item': {
+                'userId': {'S': user_id},
+                "eventId": {'S': eventId},
+                'instanceId': {'S': instance_id},
+                'createdTime': {'N': str(now_sgt.timestamp())},
+                'title': {'S': title},
+                'description': {'S': description},
+                'editorValue': {'S': editorValue},
+                'isCompleted': {'BOOL': False},
+            }
+        }
+        dynamodb.put_item(**db_params)
+        print('Event created successfully')
+        return {'eventId': eventId}
+    except Exception as err:
+        print(f"Error creating event: {err}")
+        raise ValueError('Failed to create event')
+
+def update_event(user_id, instance_id, event_id):
+    try:
+        if not user_id or not instance_id or not event_id:
+            raise ValueError('User ID, Instance ID, and Event ID cannot be empty')
+
+        update_params = {
+            'TableName': os.environ.get('EVENT_TABLE'),
+            'Key': {
+                'userId': {'S': user_id},
+                'eventId': {'S': event_id}
+            },
+            'UpdateExpression': 'SET isCompleted = :isCompleted',
+            'ExpressionAttributeValues': {
+                ':isCompleted': {'BOOL': True}
+            }
+        }
+        dynamodb.update_item(**update_params)
+        print('Broadcast updated successfully')
+        return {'message': 'Broadcast updated successfully'}
+    except Exception as err:
+        print(f"Error updating broadcast: {err}")
+        raise ValueError('Failed to update broadcast')
 
 def send_message(public_url, message):
     try:
@@ -235,6 +304,7 @@ def lambda_handler(event, context):
         public_url = body.get('publicUrl')
         action = body.get('action')
         message = body.get('message')
+        event_id = body.get('eventId')
 
         user_table = os.environ.get('USER_TABLE')
         event_table = os.environ.get('EVENT_TABLE')
@@ -265,16 +335,24 @@ def lambda_handler(event, context):
                 'statusCode': 203,
                 'body': json.dumps({'loginStatus': login_status(public_url, engine_table, user_id, instance_id)})
             },
-            "sendMessage": lambda: {
+            "startBroadCast": lambda: {
                 'statusCode': 204,
+                'body': json.dumps({'createEvent': create_event(user_id, instance_id, event_table, **body)})
+            },
+            "sendMessage": lambda: {
+                'statusCode': 205,
                 'body': json.dumps({'messageResponse': send_message(public_url, message)})
             },
+            "updateBroadCast": lambda: {
+                'statusCode': 206,
+                'body': json.dumps({'updateEvent': update_event(user_id, instance_id, event_id)})
+            },
             "logout": lambda: {
-                'statusCode': 205,
+                'statusCode': 207,
                 'body': json.dumps({'logOutandTerminateResponse': log_out_and_terminate_instances(public_url, user_id, instance_id, event_table)})
             },
             "terminate": lambda: {
-                'statusCode': 206,
+                'statusCode': 208,
                 'body': json.dumps({'instanceId': terminate_instance(user_id, instance_id, event_table)})
             },
         }
