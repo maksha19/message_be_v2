@@ -173,7 +173,7 @@ def create_event(user_id, instance_id, event_table, **request_params):
         if not user_id or not instance_id:
             raise ValueError('User ID and Instance ID cannot be empty')
 
-        now_sgt = datetime.now(ZoneInfo("Asia/Singapore"))
+        now_sgt = int(datetime.now(ZoneInfo("Asia/Singapore")).timestamp())
         eventId = f"{user_id}_{instance_id}_{now_sgt}"
         title = request_params.get('title', 'No Title')
         description = request_params.get('description', 'No Description')
@@ -199,7 +199,7 @@ def create_event(user_id, instance_id, event_table, **request_params):
                 'userId': {'S': user_id},
                 "eventId": {'S': eventId},
                 'instanceId': {'S': instance_id},
-                'createdTime': {'N': str(now_sgt.timestamp())},
+                'createdTime': {'N': str(now_sgt)},
                 'title': {'S': title},
                 'description': {'S': description},
                 'editorValue': {'S': editorValue},
@@ -320,56 +320,44 @@ def lambda_handler(event, context):
 
         action_map = {
             "create": lambda: {
-                'statusCode': 200,
-                'body': json.dumps({'instanceId': create_instance(user_id, engine_table)})
+                'body': json.dumps({'instanceId': create_instance(user_id, engine_table),'statusCode': 200})
             },
             "status": lambda: {
-                'statusCode': 201,
-                'body': json.dumps({'publicUrl': status_instance(user_id, instance_id)})
+                'body': json.dumps({'publicUrl': status_instance(user_id, instance_id),'statusCode': 201})
             },
             "qrcode": lambda: {
-                'statusCode': 202,
-                'body': json.dumps({'qrCode': get_message_qr_code(public_url)})
+                'body': json.dumps({'qrCode': get_message_qr_code(public_url),'statusCode': 202})
             },
             "loginStatus": lambda: {
-                'statusCode': 203,
-                'body': json.dumps({'loginStatus': login_status(public_url, engine_table, user_id, instance_id)})
+                'body': json.dumps({'loginStatus': login_status(public_url, engine_table, user_id, instance_id),'statusCode': 203})
             },
             "startBroadCast": lambda: {
-                'statusCode': 204,
-                'body': json.dumps({'createEvent': create_event(user_id, instance_id, event_table, **body)})
+                'body': json.dumps({'createEvent': create_event(user_id, instance_id, event_table, **body),'statusCode': 204})
             },
             "sendMessage": lambda: {
-                'statusCode': 205,
-                'body': json.dumps({'messageResponse': send_message(public_url, message)})
+                'body': json.dumps({'messageResponse': send_message(public_url, message),'statusCode': 205})
             },
             "updateBroadCast": lambda: {
-                'statusCode': 206,
-                'body': json.dumps({'updateEvent': update_event(user_id, instance_id, event_id)})
+                'body': json.dumps({'updateEvent': update_event(user_id, instance_id, event_id),'statusCode': 206})
             },
             "logout": lambda: {
-                'statusCode': 207,
-                'body': json.dumps({'logOutandTerminateResponse': log_out_and_terminate_instances(public_url, user_id, instance_id, event_table)})
+                'body': json.dumps({'logOutandTerminateResponse': log_out_and_terminate_instances(public_url, user_id, instance_id, event_table),'statusCode': 207})
             },
             "terminate": lambda: {
-                'statusCode': 208,
-                'body': json.dumps({'instanceId': terminate_instance(user_id, instance_id, event_table)})
+                'body': json.dumps({'instanceId': terminate_instance(user_id, instance_id, event_table),'statusCode': 208})
             },
         }
 
         return action_map.get(action, lambda: {
-            'statusCode': 400,
-            'body': json.dumps({'message': 'Invalid action'})
+            'body': json.dumps({'message': 'Invalid action','statusCode': 400})
         })()
     except ValueError as err:
         print(f"Validation error: {err}")
         return {
-            'statusCode': 400,
-            'body': json.dumps({'message': str(err)})
+            'body': json.dumps({'message': str(err),'statusCode': 400})
         }
     except Exception as err:
         print(f"System error: {err}")
         return {
-            'statusCode': 500,
-            'body': json.dumps({'message': 'SYSTEM ERROR'})
+            'body': json.dumps({'message': 'SYSTEM ERROR','statusCode': 500})
         }
