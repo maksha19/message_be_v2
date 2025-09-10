@@ -15,7 +15,7 @@ ec2 = boto3.client('ec2', region_name=aws_region, aws_access_key_id=aws_access_k
 ssm = boto3.client('ssm', region_name=aws_region, aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
 
 params = {
-    "ImageId": "ami-073e03612149d5c85",
+    "ImageId": "ami-041d098a1f645b918",
     "InstanceType": "t3.micro",
     "MinCount": 1,
     "MaxCount": 1,
